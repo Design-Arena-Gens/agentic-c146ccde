@@ -1,0 +1,315 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String                 @id @default(cuid())
+  name          String
+  email         String                 @unique
+  passwordHash  String
+  role          Role
+  isActive      Boolean                @default(true)
+  failedLogins  Int                    @default(0)
+  lastLoginAt   DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  documents     Document[]             @relation("DocumentCreatedBy")
+  versions      DocumentVersion[]      @relation("VersionCreatedBy")
+  issuedVersions DocumentVersion[]     @relation("IssuedBy")
+  signatures    ElectronicSignature[]
+  workflowSteps DocumentWorkflowStep[]
+  auditLogs     AuditLog[]
+  accesses      DocumentAccess[]
+  sessions      Session[]
+  accounts      Account[]
+}
+
+model DocumentType {
+  id          Int         @id @default(autoincrement())
+  type        String      @unique
+  description String
+  documents   Document[]
+}
+
+model Document {
+  id                String                @id @default(cuid())
+  title             String
+  documentNumber    String                @unique
+  documentCategory  DocumentCategory
+  documentSecurity  DocumentSecurity
+  status            DocumentStatus        @default(DRAFT)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  effectiveFrom     DateTime?
+  nextIssueDate     DateTime?
+  createdById       String
+  typeId            Int
+  currentVersionId  String?
+  lifecycleState    LifecycleState        @default(DRAFT)
+
+  createdBy         User                  @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  type              DocumentType          @relation(fields: [typeId], references: [id])
+  currentVersion    DocumentVersion?      @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions          DocumentVersion[]
+  workflows         DocumentWorkflowRun[]
+  auditLogs         AuditLog[]
+  securityGrants    DocumentAccess[]
+}
+
+model DocumentVersion {
+  id               String                @id @default(cuid())
+  documentId       String
+  versionLabel     String
+  issueDate        DateTime?
+  effectiveFrom    DateTime?
+  nextIssueDate    DateTime?
+  issuerRole       Role?
+  status           DocumentStatus        @default(DRAFT)
+  summary          String?
+  changeNote       String?
+  content          String?
+  isSuperseded     Boolean               @default(false)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  createdById      String
+  issuedById       String?
+
+  document         Document              @relation(fields: [documentId], references: [id])
+  createdBy        User                  @relation("VersionCreatedBy", fields: [createdById], references: [id])
+  issuedBy         User?                 @relation("IssuedBy", fields: [issuedById], references: [id])
+  signatures       ElectronicSignature[]
+  workflowSteps    DocumentWorkflowStep[]
+  auditLogs        AuditLog[]            @relation("VersionAuditLogs")
+  currentDocument  Document[]            @relation("CurrentVersion")
+}
+
+model WorkflowTemplate {
+  id          String                @id @default(cuid())
+  name        String
+  description String?
+  category    DocumentCategory?
+  isDefault   Boolean               @default(false)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  steps       WorkflowStepTemplate[]
+  runs        DocumentWorkflowRun[]
+}
+
+model WorkflowStepTemplate {
+  id           String             @id @default(cuid())
+  templateId   String
+  stepOrder    Int
+  role         Role
+  stepType     WorkflowStepType
+  requireSignature Boolean        @default(true)
+  slaHours     Int?
+
+  template     WorkflowTemplate   @relation(fields: [templateId], references: [id])
+  steps        DocumentWorkflowStep[] @relation("TemplateSteps")
+}
+
+model DocumentWorkflowRun {
+  id             String                 @id @default(cuid())
+  documentId     String
+  templateId     String
+  status         WorkflowStatus         @default(PENDING)
+  startedAt      DateTime               @default(now())
+  completedAt    DateTime?
+  currentStep    Int                    @default(1)
+
+  document       Document               @relation(fields: [documentId], references: [id])
+  template       WorkflowTemplate       @relation(fields: [templateId], references: [id])
+  steps          DocumentWorkflowStep[]
+  auditLogs      AuditLog[]
+}
+
+model DocumentWorkflowStep {
+  id                String                @id @default(cuid())
+  runId             String
+  templateStepId    String?
+  order             Int
+  role              Role
+  stepType          WorkflowStepType
+  status            WorkflowStepStatus    @default(PENDING)
+  dueDate           DateTime?
+  completedAt       DateTime?
+  assigneeId        String?
+  comments          String?
+  documentVersionId String?
+
+  run               DocumentWorkflowRun   @relation(fields: [runId], references: [id])
+  templateStep      WorkflowStepTemplate? @relation("TemplateSteps", fields: [templateStepId], references: [id])
+  assignee          User?                 @relation(fields: [assigneeId], references: [id])
+  documentVersion   DocumentVersion?      @relation(fields: [documentVersionId], references: [id])
+  signatures        ElectronicSignature[]
+}
+
+model ElectronicSignature {
+  id                 String                @id @default(cuid())
+  documentVersionId  String
+  userId             String
+  purpose            SignaturePurpose
+  signedAt           DateTime              @default(now())
+  signatureHash      String
+  metadata           Json?
+  workflowStepId     String?
+
+  documentVersion    DocumentVersion       @relation(fields: [documentVersionId], references: [id])
+  user               User                  @relation(fields: [userId], references: [id])
+  workflowStep       DocumentWorkflowStep? @relation(fields: [workflowStepId], references: [id])
+}
+
+model DocumentAccess {
+  id             String         @id @default(cuid())
+  documentId     String
+  userId         String?
+  roleScope      Role?
+  canView        Boolean        @default(true)
+  canEdit        Boolean        @default(false)
+  canApprove     Boolean        @default(false)
+  expiresAt      DateTime?
+
+  document       Document       @relation(fields: [documentId], references: [id])
+  user           User?          @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id                 String                @id @default(cuid())
+  actorId            String?
+  action             String
+  entityType         String
+  entityId           String
+  createdAt          DateTime              @default(now())
+  metadata           Json?
+  ipAddress          String?
+  documentId         String?
+  documentVersionId  String?
+  workflowRunId      String?
+
+  actor              User?                 @relation(fields: [actorId], references: [id])
+  document           Document?             @relation(fields: [documentId], references: [id])
+  version            DocumentVersion?      @relation("VersionAuditLogs", fields: [documentVersionId], references: [id])
+  workflowRun        DocumentWorkflowRun?  @relation(fields: [workflowRunId], references: [id])
+}
+
+model Account {
+  id                 String   @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+  refresh_token_expires_in Int?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String
+  token      String   @unique
+  expires    DateTime
+}
+
+enum Role {
+  ADMIN
+  QA
+  QA_MANAGER
+  DOCUMENT_CONTROLLER
+  AUTHOR
+  REVIEWER
+  APPROVER
+  VIEWER
+}
+
+enum DocumentCategory {
+  QUALITY
+  OPERATIONS
+  REGULATORY
+  VALIDATION
+  MANUFACTURING
+  LAB
+  SAFETY
+  TRAINING
+  SUPPLIER
+  OTHER
+}
+
+enum DocumentSecurity {
+  CONFIDENTIAL
+  INTERNAL
+  RESTRICTED
+  PUBLIC
+}
+
+enum DocumentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  EFFECTIVE
+  RETIRED
+  ARCHIVED
+}
+
+enum LifecycleState {
+  DRAFT
+  IN_REVIEW
+  PENDING_APPROVAL
+  EFFECTIVE
+  UNDER_REVISION
+  OBSOLETE
+}
+
+enum WorkflowStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+enum WorkflowStepType {
+  REVIEW
+  APPROVAL
+  NOTIFICATION
+}
+
+enum SignaturePurpose {
+  AUTHORSHIP
+  REVIEW
+  APPROVAL
+  EFFECTIVITY
+  ACKNOWLEDGEMENT
+}

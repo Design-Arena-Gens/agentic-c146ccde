@@ -1,0 +1,5 @@
+Step 1 (done): Scaffold Next.js app with TypeScript, Tailwind, basic layout components, and initial data models.
+Step 2 (done): Implement backend API routes, database schema using Prisma/SQLite, authentication, authorization, audit logging.
+Step 3 (done): Build front-end pages for dashboard, document list, detail, workflow management, signatures, and admin controls.
+Step 4 (done): Add compliance features (versioning, electronic signatures, audit trail views), polish UI, integrate forms & validation.
+Step 5 (done): Test app locally, prepare deployment config, run build, and deploy to Vercel followed by verification curl.
